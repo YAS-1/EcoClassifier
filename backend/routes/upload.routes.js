@@ -8,5 +8,6 @@ const Uploadrouter = express.Router();
 
 // field name 'image' should match frontend form input
 Uploadrouter.post('/upload', upload.single('image'), uploadAndClassify);
+Uploadrouter.post("/upload-from-path", uploadFromPath);
 
 export default Uploadrouter;
