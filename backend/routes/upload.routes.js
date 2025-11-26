@@ -2,10 +2,12 @@
 import express from 'express';
 import upload from '../middleware/uploadMulter.js'; // your Multer memory storage middleware (ESM export)
 import { uploadAndClassify } from '../controllers/upload.controller.js';
+import { uploadFromPath } from "../controllers/uploadFromPath.controller.js";
 
 const Uploadrouter = express.Router();
 
 // field name 'image' should match frontend form input
 Uploadrouter.post('/upload', upload.single('image'), uploadAndClassify);
+Uploadrouter.post("/upload-from-path", uploadFromPath);
 
 export default Uploadrouter;
