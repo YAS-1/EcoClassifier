@@ -3,6 +3,8 @@ import Event from '../models/Event.model.js';
 import { uploadBufferToCloudinary } from '../utils/uploadToCloudinary.js';
 import { predictFromImageUrl } from '../utils/modelClient.js';
 
+
+// upload and Classify controller
 export const uploadAndClassify = async (req, res) => {
   try {
     if (!req.file || !req.file.buffer) {

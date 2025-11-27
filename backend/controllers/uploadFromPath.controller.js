@@ -7,6 +7,8 @@ import { predictFromImageUrl } from "../utils/modelClient.js";
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB - limit server-read file size for safety
 
+
+// upload  path controller
 export const uploadFromPath = async (req, res) => {
   try {
     const { path: requestedPath } = req.body;

@@ -2,10 +2,8 @@
 import Event from '../models/Event.model.js';
 import { Parser } from 'json2csv';
 
-/**
- * GET /api/events
- * Query: ?page=1&limit=50
- */
+
+// getEvents controller
 export const getEvents = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page || '1', 10));
@@ -22,13 +20,8 @@ export const getEvents = async (req, res) => {
   }
 };
 
-/**
- * GET /api/stats
- * Query params:
- * - rangeStart, rangeEnd (ISO strings)
- * - groupBy = hour|day|month (default day)
- * - categories = comma separated (optional)
- */
+
+// getAggregated controller
 export const getAggregated = async (req, res) => {
   try {
     const { rangeStart, rangeEnd, groupBy = 'day', categories, deviceId } = req.query;
@@ -108,10 +101,8 @@ export const getAggregated = async (req, res) => {
   }
 };
 
-/**
- * GET /api/export
- * Returns CSV of events
- */
+
+// exportCSV controller
 export const exportCSV = async (req, res) => {
   try {
     const docs = await Event.find().sort({ timestamp: -1 }).lean();
