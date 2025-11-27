@@ -21,83 +21,108 @@ export const getEvents = async (req, res) => {
 };
 
 
-// getAggregated controller
+// Changed getAggregated function------------------------------------------------------------
 export const getAggregated = async (req, res) => {
   try {
-    const { rangeStart, rangeEnd, groupBy = 'day', categories, deviceId } = req.query;
+    const { rangeStart, rangeEnd, groupBy = "day", categories, deviceId } = req.query;
     const match = {};
     if (rangeStart || rangeEnd) {
       match.timestamp = {};
       if (rangeStart) match.timestamp.$gte = new Date(rangeStart);
       if (rangeEnd) match.timestamp.$lte = new Date(rangeEnd);
     }
-    if (categories) match.category = { $in: categories.split(',').map(c => c.trim()) };
+    if (categories) match.category = { $in: categories.split(",").map((c) => c.trim()) };
     if (deviceId) match.deviceId = deviceId;
 
-    let groupExpr;
-    if (groupBy === 'hour') {
-      groupExpr = {
-        year: { $year: '$timestamp' },
-        month: { $month: '$timestamp' },
-        day: { $dayOfMonth: '$timestamp' },
-        hour: { $hour: '$timestamp' }
-      };
-    } else if (groupBy === 'month') {
-      groupExpr = {
-        year: { $year: '$timestamp' },
-        month: { $month: '$timestamp' }
-      };
-    } else {
-      groupExpr = {
-        year: { $year: '$timestamp' },
-        month: { $month: '$timestamp' },
-        day: { $dayOfMonth: '$timestamp' }
-      };
-    }
+    // timezone (default to UTC if not set)
+    const TZ = process.env.TIMEZONE || "UTC";
+
+    // pick truncation unit for $dateTrunc
+    let unit = "day";
+    if (groupBy === "hour") unit = "hour";
+    else if (groupBy === "month") unit = "month";
+
+    // Steps:
+    // 1) Create truncatedDate using $dateTrunc with timezone
+    // 2) Group by truncatedDate + category
+    // 3) Project out truncatedDate (as Date) and later produce ISO & epoch ms arrays
 
     const pipeline = [
       { $match: match },
-      { $group: { _id: { group: groupExpr, category: '$category' }, count: { $sum: 1 } } },
-      { $project: { _id: 0, category: '$_id.category', count: 1, group: '$_id.group' } },
-      { $sort: { 'group.year': 1, 'group.month': 1, 'group.day': 1, 'group.hour': 1 } }
+      {
+        $addFields: {
+          _trunc: {
+            $dateTrunc: { date: "$timestamp", unit: unit, timezone: TZ }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: { truncated: "$_trunc", category: "$category" },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          truncatedDate: "$_id.truncated", // Date object (timezone applied by $dateTrunc)
+          category: "$_id.category",
+          count: 1
+        }
+      },
+      // sort by truncatedDate ascending
+      { $sort: { truncatedDate: 1, category: 1 } }
     ];
 
     const rows = await Event.aggregate(pipeline).allowDiskUse(true);
-    // Transform to groups & series
-    const groupByKey = (g) => {
-      if (groupBy === 'hour') return `${g.year}-${String(g.month).padStart(2,'0')}-${String(g.day).padStart(2,'0')}T${String(g.hour).padStart(2,'0')}:00`;
-      if (groupBy === 'month') return `${g.year}-${String(g.month).padStart(2,'0')}`;
-      return `${g.year}-${String(g.month).padStart(2,'0')}-${String(g.day).padStart(2,'0')}`;
-    };
 
-    const groupOrder = [];
+    // Build groupOrder (ordered unique truncatedDate), and series map
+    const groupDates = [];
+    const groupSet = new Set();
     const series = {};
-    const seen = new Set();
 
-    rows.forEach(r => {
-      const key = groupByKey(r.group);
-      if (!groupOrder.includes(key)) groupOrder.push(key);
-      if (!series[r.category]) series[r.category] = [];
-      seen.add(r.category);
+    rows.forEach((r) => {
+      // truncatedDate is a JS Date when returned by aggregation library
+      // but inside Node it may be a Date object — use getTime() for uniqueness
+      const ms = (r.truncatedDate instanceof Date) ? r.truncatedDate.getTime() : new Date(r.truncatedDate).getTime();
+      if (!groupSet.has(ms)) {
+        groupSet.add(ms);
+        groupDates.push(ms);
+      }
+      if (!series[r.category]) series[r.category] = {};
     });
 
-    // init arrays with zeros
-    Object.keys(series).forEach(cat => {
-      series[cat] = groupOrder.map(() => 0);
+    // Ensure groupDates sorted ascending
+    groupDates.sort((a, b) => a - b);
+
+    // Initialize series arrays with zeros
+    Object.keys(series).forEach((cat) => {
+      series[cat] = groupDates.map(() => 0);
     });
 
-    // fill counts (rows may not be in perfect group order for each category)
-    rows.forEach(r => {
-      const key = groupByKey(r.group);
-      const idx = groupOrder.indexOf(key);
-      if (!series[r.category]) series[r.category] = groupOrder.map(() => 0);
+    // Fill series counts
+    rows.forEach((r) => {
+      const ms = (r.truncatedDate instanceof Date) ? r.truncatedDate.getTime() : new Date(r.truncatedDate).getTime();
+      const idx = groupDates.indexOf(ms);
+      if (idx === -1) return;
+      if (!series[r.category]) series[r.category] = groupDates.map(() => 0);
       series[r.category][idx] = r.count;
     });
 
-    res.json({ success: true, groupBy, groups: groupOrder, series });
+    // Convert groupDates (ms) to ISO strings in UTC for readability
+    const groupsIso = groupDates.map((ms) => new Date(ms).toISOString()); // e.g. "2025-11-26T19:00:00.000Z"
+    const groupsMillis = groupDates; // epoch ms
+
+    return res.json({
+      success: true,
+      groupBy,
+      groups: groupsIso,      // canonical ISO strings (UTC)
+      groupsMillis,          // epoch ms (preferred for client parsing)
+      series,
+    });
   } catch (err) {
-    console.error('getAggregated err', err);
-    res.status(500).json({ success: false, message: err.message });
+    console.error("getAggregated err", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
