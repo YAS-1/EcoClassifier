@@ -4,14 +4,7 @@ import api from "../api"; // your axios instance (baseURL http://localhost:5000/
 import toast from "react-hot-toast";
 import { ClipLoader } from "react-spinners";
 
-/**
- * UploadPage (client-only)
- * - Drag & drop or pick an image
- * - Client validations: image only, maxSize
- * - Preview
- * - Upload to /upload (multipart/form-data) with field name "image"
- * - Shows upload progress bar
- */
+
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
